@@ -86,10 +86,6 @@ Uses `window.Route` to share routes across elements/shadowroot
                 },
                 chooseStateByUrl: function(segments,obj,acc){
                     acc = acc == undefined ? {data: {}} : acc;
-
-                    if(segments[0] == "" && segments[1] == ""){
-                        console.log("DEFAULT ROUTE");
-                    } else {
                         var scores = [];
                         var children = this.fieldsToArr(obj);
                         for (var i = 0; i < children.length; i++) {
@@ -120,7 +116,6 @@ Uses `window.Route` to share routes across elements/shadowroot
                         } else {
                             return acc;
                         }
-                    }
                 },
                 urlMatchScore: function(state,segments, data){
                     var element = state.$element;
@@ -161,7 +156,7 @@ Uses `window.Route` to share routes across elements/shadowroot
                  * @event route-changed
                  * @param {Object} route
                  *
-                 * Fired after the page has loaded and window.location has been processed and converted to a state to be routed
+                 * Fired when a child requests a route change and Route.active has been updated
                 */
                 routeChange: function(e){
                     var segments = e.detail.state.split(".");
