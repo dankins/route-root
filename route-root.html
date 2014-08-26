@@ -21,189 +21,218 @@ Uses `window.Route` to share routes across elements/shadowroot
 @homepage http://polymerlabs.github.io/seed-element
 -->
 <polymer-element name="route-root" attributes="html5Mode">
-    <template>
-        <div on-routechange="{{routeChange}}">
-            <content></content>
-        </div>
+<template>
+    <div on-routechange="{{routeChange}}">
+        <content></content>
+    </div>
 
-    </template>
-    <script>
-        (function(){
-            window.Route = window.Route || {children: {}, active: {}};
+</template>
+<script>
+(function(){
+    window.Route = window.Route || {children: {}, active: {}};
 
-            Polymer('route-root',{
+    Polymer('route-root',{
 
-                ready: function(){
-                    Route.root = this;
-                    window.onpopstate = this.handlePopstate.bind(this);
-                },
-                /**
-                 *
-                 * @event router-ready
-                 * @param {Object} route
-                 *
-                 * Fired on domReady and contains the processed window.Route object
-                */
-                domReady: function(){
-                    this.fire("router-ready",window.Route);
-                    this.initialURL();
-                },
-                /**
-                 *
-                 * @attribute html5Mode
-                 * @type bool
-                 * @default false
-                 *
-                 * determines whether to use hashes in the url
-                 */
-                html5Mode: false,
-                urlPrefix: "#",
-                html5ModeChanged: function(){
-                    this.urlPrefix = this.html5Mode ? "" : "#";
-                },
-                /**
-                 *
-                 * @event router-start-route
-                 * @param {Object} route
-                 *
-                 * Fired after the page has loaded and window.location has been processed and converted to a state to be routed
-                */
-                initialURL: function(){
-                    var url = "";
-                    if(this.html5Mode){
-                        url = window.location.pathname;
+        ready: function(){
+            Route.root = this;
+            window.onpopstate = this.handlePopstate.bind(this);
+        },
+        /**
+         *
+         * @event router-ready
+         * @param {Object} route
+         *
+         * Fired on domReady and contains the processed window.Route object
+         */
+        domReady: function(){
+            this.fire("router-ready",window.Route);
+            this.initialURL();
+        },
+        /**
+         *
+         * @attribute html5Mode
+         * @type bool
+         * @default false
+         *
+         * determines whether to use hashes in the url
+         */
+        html5Mode: false,
+        urlPrefix: "#",
+        html5ModeChanged: function(){
+            this.urlPrefix = this.html5Mode ? "" : "#";
+        },
+        /**
+         *
+         * @event router-start-route
+         * @param {Object} route
+         *
+         * Fired after the page has loaded and window.location has been processed and converted to a state to be routed
+         */
+        initialURL: function(){
+            var url = "";
+            if(this.html5Mode){
+                url = window.location.pathname;
+            } else {
+                url = window.location.hash.substring(1,window.location.hash.length);
+            }
+
+            var segments = url.split("/");
+
+            var result = this.chooseStateByUrl(segments,Route.children);
+            this.fire("router-start-route",result);
+            Route.active = result;
+            history.replaceState(result,undefined,window.location.href);
+
+        },
+        chooseStateByUrl: function(segments,obj,acc){
+            acc = acc == undefined ? {data: {}} : acc;
+            var scores = [];
+            var children = this.fieldsToArr(obj);
+            for (var i = 0; i < children.length; i++) {
+                var score = this.urlMatchScore(children[i], segments);
+                scores.push(score);
+
+            }
+            var result = scores.reduce(function (acc, cur) {
+                if (cur.score > acc.score) {
+                    return cur;
+                } else {
+                    return acc;
+                }
+            }, {matched: false, score: 0});
+
+
+            if (result.score > 0) {
+                segments.splice(0, result.remove);
+
+                var selectedElement = result.state;
+                acc.state = result.state.$element.state;
+                if(result.data != undefined){
+                    acc.data[result.data.key] = result.data.value
+                }
+
+                return this.chooseStateByUrl(segments,selectedElement,acc);
+
+            } else {
+                return acc;
+            }
+        },
+        urlMatchScore: function(state,segments, data){
+            var element = state.$element;
+            var score = 0;
+            var remove = 0;
+            //data = data == undefined ? {} : data;
+            if(element.url == undefined){
+                score = 0;
+                remove = 1;
+            }
+            else if(element.url == ""){
+                // default
+                score = 10;
+                remove = 1;
+            }
+            else if (segments[0] == "" && element.url == "/"+segments[1]){
+                score = 75;
+                remove = 2;
+                // splice an extra time
+                //segments.splice(0, 1);
+            }
+            else if (element.url == "/"+segments[0]){
+                score = 100;
+                remove = 1;
+            } else if (element.url.substring(0,2) == "/:" && segments[0] != undefined){
+                score = 80;
+                remove = 1;
+                var varname = element.url.substring(2,element.url.length);
+                data = {
+                    key: varname,
+                    value: segments[0]
+                };
+            }
+            return {score: score, state: state, element: element, data: data, remove: remove};
+        },
+        /**
+         *
+         * @event route-changed
+         * @param {Object} e
+         *
+         * Fired when a child requests a route change and Route.active has been updated
+         */
+        routeChange: function(e){
+            // Process as long as it isn't a popstate;
+            if(e.detail == "back") {
+                window.history.back();
+            }
+            else {
+                var data = e.detail.data;
+                var url = e.detail.url;
+                if(url == undefined){
+                    url = this.getUrl(e.detail.state, e.detail.data)
+                }
+
+                var state = {
+                    data: data,
+                    state: e.detail.state
+                };
+
+
+                history.pushState(state,undefined,url);
+                Route.active = e.detail;
+                this.fire('route-changed', e.detail);
+            }
+
+        },
+        getUrl: function(state,data){
+            var result = state.split(".").reduce(function(acc,cur){
+                var url = acc.route[cur].$element.url;
+                return {
+                    workingURL: acc.workingURL + url,
+                    route: acc.route[cur]
+                };
+
+            },{workingURL: "", route: Route.children});
+
+            final = this.replaceData(result.workingURL,data);
+
+            return this.urlPrefix + final;
+        },
+        replaceData: function(url,data){
+            // if there is a colon in the route we need to substitute it with the data
+            var segments = url.split("/");
+            segments = segments.map(function(x){
+                if(x.charAt(0) == ":"){
+                    var varname = x.substring(1,x.length);
+                    if(data != undefined && data[varname] != undefined){
+                        return data[varname];
                     } else {
-                        url = window.location.hash.substring(1,window.location.hash.length);
+                        return "unset";
                     }
-
-                    var segments = url.split("/");
-
-                    var result = this.chooseStateByUrl(segments,Route.children);
-                    this.fire("router-start-route",result);
-                    Route.active = result;
-                    history.replaceState(result,undefined,window.location.href);
-
-                },
-                chooseStateByUrl: function(segments,obj,acc){
-                    acc = acc == undefined ? {data: {}} : acc;
-                        var scores = [];
-                        var children = this.fieldsToArr(obj);
-                        for (var i = 0; i < children.length; i++) {
-                            var score = this.urlMatchScore(children[i], segments);
-                            scores.push(score);
-
-                        }
-                        var result = scores.reduce(function (acc, cur) {
-                            if (cur.score > acc.score) {
-                                return cur;
-                            } else {
-                                return acc;
-                            }
-                        }, {matched: false, score: 0});
-
-
-                        if (result.score > 0) {
-                            segments.splice(0, result.remove);
-
-                            var selectedElement = result.state;
-                            acc.state = result.state.$element.state;
-                            if(result.data != undefined){
-                                acc.data[result.data.key] = result.data.value
-                            }
-
-                            return this.chooseStateByUrl(segments,selectedElement,acc);
-
-                        } else {
-                            return acc;
-                        }
-                },
-                urlMatchScore: function(state,segments, data){
-                    var element = state.$element;
-                    var score = 0;
-                    var remove = 0;
-                    //data = data == undefined ? {} : data;
-                    if(element.url == undefined){
-                        score = 0;
-                        remove = 1;
-                    }
-                    else if(element.url == ""){
-                        // default
-                        score = 10;
-                        remove = 1;
-                    }
-                    else if (segments[0] == "" && element.url == "/"+segments[1]){
-                        score = 75;
-                        remove = 2;
-                        // splice an extra time
-                        //segments.splice(0, 1);
-                    }
-                    else if (element.url == "/"+segments[0]){
-                        score = 100;
-                        remove = 1;
-                    } else if (element.url.substring(0,2) == "/:"){
-                        score = 80;
-                        remove = 1;
-                        var varname = element.url.substring(2,element.url.length);
-                        data = {
-                            key: varname,
-                            value: segments[0]
-                        };
-                    }
-                    return {score: score, state: state, element: element, data: data, remove: remove};
-                },
-                /**
-                 *
-                 * @event route-changed
-                 * @param {Object} route
-                 *
-                 * Fired when a child requests a route change and Route.active has been updated
-                */
-                routeChange: function(e){
-                    var segments = e.detail.state.split(".");
-                    var data = e.detail.data;
-                    var url = e.detail.url;
-
-                    var state = {
-                        data: data,
-                        state: e.detail.state
-                    };
-
-
-                    history.pushState(state,undefined,url);
-                    Route.active = e.detail;
-                    this.fire('route-changed', e.detail);
-                },
-                getUrl: function(state){
-                    var result = state.split(".").reduce(function(acc,cur){
-                        var url = acc.route[cur].$element.url;
-                        return {
-                            workingURL: acc.workingURL + url,
-                            route: acc.route[cur]
-                        };
-
-                    },{workingURL: "", route: Route.children});
-
-                    return this.urlPrefix + result.workingURL;
-                },
-                handlePopstate: function(e){
-                    if(e.state == undefined){
-                        this.initialURL();
-                    } else {
-                        Route.active = e.state;
-                    }
-
-                },
-                fieldsToArr: function(obj){
-                    var rtn = [];
-                    for (var name in obj) {
-                        if (obj.hasOwnProperty(name) && name != "$element") {
-                            rtn.push(obj[name]);
-                        }
-                    }
-                    return rtn;
+                } else {
+                    return x;
                 }
             });
-        })();
 
-    </script>
+            return segments.join("/");
+        },
+        handlePopstate: function(e){
+            if(e.state == undefined){
+                this.initialURL();
+            } else {
+                Route.active = e.state;
+            }
+
+        },
+        fieldsToArr: function(obj){
+            var rtn = [];
+            for (var name in obj) {
+                if (obj.hasOwnProperty(name) && name != "$element") {
+                    rtn.push(obj[name]);
+                }
+            }
+            return rtn;
+        }
+    });
+})();
+
+</script>
 </polymer-element>
