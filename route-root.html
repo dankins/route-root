@@ -1,4 +1,5 @@
 <link rel="import" href="../polymer/polymer.html">
+<link rel="import" href="../../common/q.html">
 
 <!--
 Root element for URL routing. All states and links must be children of this element.
@@ -80,7 +81,8 @@ Uses `window.Route` to share routes across elements/shadowroot
 
             var result = this.chooseStateByUrl(segments,Route.children);
             this.fire("router-start-route",result);
-            Route.active = result;
+            //Route.active = result;
+            this.handleRouteChange(result);
             history.replaceState(result,undefined,window.location.href);
 
         },
@@ -164,23 +166,34 @@ Uses `window.Route` to share routes across elements/shadowroot
                 window.history.back();
             }
             else {
-                var data = e.detail.data;
-                var url = e.detail.url;
-                if(url == undefined){
-                    url = this.getUrl(e.detail.state, e.detail.data)
-                }
-
-                var state = {
-                    data: data,
-                    state: e.detail.state
-                };
-
-
-                history.pushState(state,undefined,url);
-                Route.active = e.detail;
-                this.fire('route-changed', e.detail);
+                this.handleRouteChange(e.detail);
+            }
+        },
+        handleRouteChange: function(route){
+            var data = route.data;
+            var url = route.url;
+            if(url == undefined){
+                url = this.getUrl(route.state, route.data)
             }
 
+            var startingPromise = Q(route);
+            var initialVal = { path: window.Route.children, promise: startingPromise };
+            var reduceFunc = function(acc,cur){
+                var promise = acc.promise.then(acc.path[cur].$element._activate.bind(acc.path[cur].$element));
+
+                return { path: acc.path[cur], promise: promise };
+            };
+
+            var rtn = route.state.split(".").reduce(reduceFunc,initialVal);
+
+            // wait for the promises to resolve here
+            rtn.promise.then(function(response){
+                route.data = response.data;
+
+                history.pushState({ data: route.data, state: route.state  },undefined,url);
+                Route.active = route;
+                this.fire('route-changed', route);
+            }.bind(this)).done();
         },
         getUrl: function(state,data){
             var result = state.split(".").reduce(function(acc,cur){
