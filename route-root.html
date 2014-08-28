@@ -189,6 +189,7 @@ Uses `window.Route` to share routes across elements/shadowroot
             // wait for the promises to resolve here
             rtn.promise.then(function(response){
                 route.data = response.data;
+                url = url == "" ? "/" : url;
 
                 history.pushState({ data: route.data, state: route.state  },undefined,url);
                 Route.active = route;
